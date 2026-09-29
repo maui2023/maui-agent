@@ -82,6 +82,8 @@ func (b *BotService) handleIncomingMessage(msg *tgbotapi.Message) {
 			b.sendWebLink(chatID)
 		case "cancel":
 			b.handleCancel(chatID)
+		case "timeout":
+			b.handleTimeoutCommand(chatID, args)
 		case "help":
 			b.sendHelp(chatID)
 		default:
@@ -285,7 +287,13 @@ func (b *BotService) executeCodingPrompt(chatID int64, prompt string) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	timeoutMins := 30
+	if b.cfg.TaskTimeoutMinutes > 0 {
+		timeoutMins = b.cfg.TaskTimeoutMinutes
+	}
+	timeoutDuration := time.Duration(timeoutMins) * time.Minute
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
 	b.cancelExecution = cancel
 	b.isExecuting = true
 	b.currentTaskMsg = prompt
@@ -303,7 +311,7 @@ func (b *BotService) executeCodingPrompt(chatID int64, prompt string) {
 	web.BroadcastExecutionStart(b.cfg.Model, prompt, sourceName)
 
 	// Notify user that task execution started
-	initialMsg, _ := b.sendMessage(chatID, fmt.Sprintf("⏳ *Sedang melaksanakan tugas melalui agy...*\n\n_Model:_ `%s`\n_Laluan:_ `%s`\n\nArahan: _%s_", b.cfg.Model, b.cfg.CodingPath, prompt))
+	initialMsg, _ := b.sendMessage(chatID, fmt.Sprintf("⏳ *Sedang melaksanakan tugas melalui agy...*\n\n_Model:_ `%s`\n_Laluan:_ `%s`\n_Had Masa:_ `%d minit`\n\nArahan: _%s_", b.cfg.Model, b.cfg.CodingPath, timeoutMins, prompt))
 
 	// Send typing actions periodically
 	typingCtx, cancelTyping := context.WithCancel(ctx)
@@ -323,9 +331,17 @@ func (b *BotService) executeCodingPrompt(chatID int64, prompt string) {
 		if ctx.Err() == context.Canceled {
 			return
 		}
-		errMsg := fmt.Sprintf("❌ *Ralat Pelaksanaan agy:*\n%s", err.Error())
+		var errMsg string
+		errStr := err.Error()
+		if ctx.Err() == context.DeadlineExceeded {
+			errMsg = fmt.Sprintf("⏱️ *Masa Pelaksanaan agy Melebihi Had (%d minit)*\n\nTugasan dihentikan secara automatik kerana proses mengambil masa lebih daripada had maksimum `%d minit`.\n\n💡 *Punca & Cara Selesaikan:*\n1. Tugasan terlalu besar/kompleks — pecahkan kepada arahan yang lebih kecil.\n2. Model AI atau API internet perlahan.\n3. Anda boleh menambah had masa dengan arahan `/timeout <minit>` (contoh: `/timeout 60`).", timeoutMins, timeoutMins)
+		} else if strings.Contains(errStr, "503") || strings.Contains(errStr, "UNAVAILABLE") || strings.Contains(errStr, "Eligibility check failed") {
+			errMsg = fmt.Sprintf("☁️ *Pelayan Google AI Mengalami Gangguan Sementara (Ralat 503 UNAVAILABLE)*\n\nPelayan AI bagi model `%s` sedang sesak (*high traffic/capacity limit*) atau perkhidmatan semakan kelayakan Google terganggu seketika.\n\n💡 *Cara Selesaikan:*\n1. Taip */model* dan tukar ke model lain yang mempunyai kapasiti tersedia (contoh: `gemini-3.8-flash-medium` atau `claude-sonnet-4-6`).\n2. Atau tunggu 1-2 minit kemudian hantar semula arahan anda.", b.cfg.Model)
+		} else {
+			errMsg = fmt.Sprintf("❌ *Ralat Pelaksanaan agy:*\n%s", err.Error())
+		}
 		if result != "" {
-			errMsg += fmt.Sprintf("\n\n*Output:*\n%s", result)
+			errMsg += fmt.Sprintf("\n\n*Output terkumpul sebelum tamat:*\n%s", result)
 		}
 		b.sendLongMessage(chatID, errMsg)
 		return
@@ -507,4 +523,32 @@ func (b *BotService) handleCallbackQuery(cq *tgbotapi.CallbackQuery) {
 
 func ptrMarkup(markup tgbotapi.InlineKeyboardMarkup) *tgbotapi.InlineKeyboardMarkup {
 	return &markup
+}
+
+// handleTimeoutCommand checks or sets the execution timeout in minutes.
+func (b *BotService) handleTimeoutCommand(chatID int64, args string) {
+	trimmed := strings.TrimSpace(args)
+	if trimmed == "" {
+		current := 30
+		if b.cfg.TaskTimeoutMinutes > 0 {
+			current = b.cfg.TaskTimeoutMinutes
+		}
+		msg := fmt.Sprintf("⏱️ *HAD MASA PELAKSANAAN AGY*\n\nHad masa semasa: *%d minit*\n\nUntuk mengubah had masa, taip:\n`/timeout <minit>`\n_Contoh:_ `/timeout 45` atau `/timeout 60`", current)
+		_, _ = b.sendMessage(chatID, msg)
+		return
+	}
+
+	var newTimeout int
+	if _, err := fmt.Sscanf(trimmed, "%d", &newTimeout); err != nil || newTimeout <= 0 || newTimeout > 360 {
+		_, _ = b.sendMessage(chatID, "⚠️ Sila masukkan nilai minit yang sah antara 1 hingga 360 (cth: `/timeout 45`).")
+		return
+	}
+
+	b.mu.Lock()
+	b.cfg.TaskTimeoutMinutes = newTimeout
+	b.mu.Unlock()
+
+	_ = b.cfg.SaveConfig()
+
+	_, _ = b.sendMessage(chatID, fmt.Sprintf("✅ *Had masa pelaksanaan berjaya dikemaskini!*\nHad masa baharu: *%d minit*", newTimeout))
 }

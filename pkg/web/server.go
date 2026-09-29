@@ -237,6 +237,10 @@ func (s *Server) Start(ctx context.Context) error {
 	embeddedHandler := http.FileServer(http.FS(subFS))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+
 		p := strings.TrimPrefix(r.URL.Path, "/")
 		if p == "" {
 			p = "index.html"

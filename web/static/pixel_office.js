@@ -175,6 +175,17 @@ class PixelOffice {
     this.renderRosterCards();
   }
 
+  updateAgentAction(modelId, actionType, actionText) {
+    const targetId = modelId || this.activeModel;
+    const ag = this.agents.find(a => a.id === targetId);
+    if (ag) {
+      ag.status = 'working';
+      let clean = String(actionText || 'Bekerja...');
+      if (clean.length > 34) clean = clean.slice(0, 31) + '...';
+      ag.task = clean;
+    }
+  }
+
   renderRosterCards() {
     const el = document.getElementById('agent-roster-grid');
     if (!el) return;
@@ -1246,12 +1257,18 @@ class PixelOffice {
   // SPEECH BUBBLE — Crisp white bubble matching reference image
   // ══════════════════════════════════════════════════════════════════════════
   drawSpeechBubble(c, x, y, text) {
+    if (!text) return;
+    let displayText = String(text).trim();
+    if (displayText.length > 34) {
+      displayText = displayText.slice(0, 31) + '...';
+    }
+
     c.save();
     const floatY = y + Math.sin(this.tick * 0.08) * 1.5;
 
     c.font = '600 9px "Outfit",-apple-system,sans-serif';
     c.textAlign = 'center';
-    const textWidth = c.measureText(text).width;
+    const textWidth = c.measureText(displayText).width;
     const bw = Math.max(textWidth + 24, 75);
     const bh = 24;
     const bx = x - bw / 2;
@@ -1282,7 +1299,7 @@ class PixelOffice {
     // Remove shadow for clean text
     c.shadowColor = 'transparent';
     c.fillStyle = '#0f172a';
-    c.fillText(text, x, floatY + 15.5);
+    c.fillText(displayText, x, floatY + 15.5);
 
     c.restore();
   }

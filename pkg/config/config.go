@@ -18,6 +18,7 @@ type Config struct {
 	Model                      string `json:"model"`
 	CodingPath                 string `json:"coding_path"`
 	DangerouslySkipPermissions bool   `json:"dangerously_skip_permissions"`
+	TaskTimeoutMinutes         int    `json:"task_timeout_minutes"`
 }
 
 const (
@@ -49,6 +50,7 @@ func LoadConfig() (*Config, error) {
 		Model:                      DefaultModel,
 		CodingPath:                 cwd,
 		DangerouslySkipPermissions: true,
+		TaskTimeoutMinutes:         30, // Default 30 min had masa pelaksanaan
 	}
 
 	configPath := GetConfigPath()
@@ -75,6 +77,16 @@ func LoadConfig() (*Config, error) {
 
 	if envPath := os.Getenv("MIQA_CODING_PATH"); envPath != "" {
 		cfg.CodingPath = strings.TrimSpace(envPath)
+	}
+
+	if envTimeout := os.Getenv("MIQA_TIMEOUT_MINUTES"); envTimeout != "" {
+		if m, err := strconv.Atoi(strings.TrimSpace(envTimeout)); err == nil && m > 0 {
+			cfg.TaskTimeoutMinutes = m
+		}
+	}
+
+	if cfg.TaskTimeoutMinutes <= 0 {
+		cfg.TaskTimeoutMinutes = 30
 	}
 
 	// Ensure CodingPath is clean and absolute

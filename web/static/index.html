@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Outfit:wght@300;400;600;700;900&family=Press+Start+2P&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=8.0">
 </head>
 <body>
   <!-- Header Bar -->
@@ -163,10 +163,44 @@
         </div>
       </div>
 
-      <!-- Real-time Terminal Window -->
+      <!-- Real-time Terminal Window (Real CLI Look & Feel) -->
       <div class="terminal-body" id="terminal-screen">
+        <!-- Terminal Window Titlebar -->
+        <div class="terminal-window-header">
+          <div class="terminal-dots">
+            <span class="term-dot dot-red" title="Tutup"></span>
+            <span class="term-dot dot-yellow" title="Minimum"></span>
+            <span class="term-dot dot-green" title="Maksimum"></span>
+          </div>
+          <div class="terminal-title-center">
+            <span class="term-prompt-user">miqa@agent</span>:<span class="term-prompt-dir">~/workspace</span> <span class="term-badge-live">● LIVE CLI</span>
+          </div>
+          <div class="terminal-model-badge" id="term-header-model">gemini-3.8-flash-high</div>
+        </div>
+
+        <!-- Terminal Output Stream -->
         <div class="terminal-content" id="terminal-logs">
-          <!-- Real-time live execution logs stream here -->
+          <div class="log-entry">
+            <span class="log-time">[15:30:00]</span>
+            <span class="log-tag tag-system">miqa: system</span>
+            <span class="log-sep"> │ </span>
+            <span class="log-msg tag-system-msg">[MIQA] AI Agent Control Center sedia menerima arahan dari Telegram (@miqa_agy_bot) atau CLI.</span>
+          </div>
+          <div class="log-entry">
+            <span class="log-time">[15:30:01]</span>
+            <span class="log-tag tag-thinking">gemini-3.8-flash-high: thinking</span>
+            <span class="log-sep"> │ </span>
+            <span class="log-msg tag-thinking-msg">Model bersedia di meja kerja pejabat pixel untuk pelaksanaan tugas seterusnya.</span>
+          </div>
+        </div>
+
+        <!-- Terminal Interactive Prompt / Cursor Row -->
+        <div class="terminal-cursor-row" id="terminal-cursor-row">
+          <span class="term-cursor-time" id="term-cursor-time">[15:48:00]</span>
+          <span class="term-cursor-tag" id="term-cursor-tag">gemini-3.8-flash-high: live</span>
+          <span class="log-sep"> │ </span>
+          <span class="term-cursor-text" id="term-cursor-text">Menunggu arahan dari Telegram (@miqa_agy_bot)...</span>
+          <span class="term-cursor-block">▌</span>
         </div>
       </div>
 
@@ -187,8 +221,8 @@
   <!-- Notification Toast -->
   <div id="toast-container" class="toast-container"></div>
 
-  <!-- Scripts -->
-  <script src="pixel_office.js"></script>
-  <script src="app.js"></script>
+  <!-- Scripts with cache-busting -->
+  <script src="pixel_office.js?v=8.0"></script>
+  <script src="app.js?v=8.0"></script>
 </body>
 </html>

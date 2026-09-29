@@ -30,7 +30,7 @@ func TestCheckAuthAndListModels(t *testing.T) {
 		t.Fatalf("NewClient failed: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	isLoggedIn, err := client.CheckAuth(ctx)

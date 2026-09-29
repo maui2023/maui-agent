@@ -23,23 +23,27 @@ class MiqaApp {
   initDOM() {
     this.headerModel = document.getElementById('header-model-val');
     this.headerPath = document.getElementById('header-path-val');
-    this.termActiveModel = document.getElementById('term-active-model-txt');
+    this.termHeaderModel = document.getElementById('term-header-model');
     this.terminalScreen = document.getElementById('terminal-screen');
     this.terminalLogs = document.getElementById('terminal-logs');
     this.termStatusText = document.getElementById('term-status-text');
     this.termStatusDot = document.getElementById('term-status-dot');
-    this.termBannerStatus = document.getElementById('term-banner-status');
+    this.termCursorTime = document.getElementById('term-cursor-time');
+    this.termCursorTag = document.getElementById('term-cursor-tag');
+    this.termCursorText = document.getElementById('term-cursor-text');
     this.officeStatusLabel = document.getElementById('office-status-label');
     this.officePulseDot = document.getElementById('office-pulse-dot');
     this.cpuChartCanvas = document.getElementById('cpu-chart');
-    this.cpuChartCtx = this.cpuChartCanvas.getContext('2d');
+    this.cpuChartCtx = this.cpuChartCanvas ? this.cpuChartCanvas.getContext('2d') : null;
   }
 
   initClock() {
     const clockEl = document.getElementById('live-clock');
     const updateTime = () => {
       const now = new Date();
-      clockEl.textContent = now.toTimeString().split(' ')[0];
+      const timeStr = now.toTimeString().split(' ')[0];
+      if (clockEl) clockEl.textContent = timeStr;
+      if (this.termCursorTime) this.termCursorTime.textContent = `[${timeStr}]`;
     };
     updateTime();
     setInterval(updateTime, 1000);
@@ -47,26 +51,35 @@ class MiqaApp {
 
   bindEvents() {
     // Terminal Controls
-    document.getElementById('btn-toggle-scanlines').addEventListener('click', () => {
-      this.terminalScreen.classList.toggle('scanlines');
-      this.showToast('Kesan CRT Scanlines diubah');
-    });
+    const btnScan = document.getElementById('btn-toggle-scanlines');
+    if (btnScan) {
+      btnScan.addEventListener('click', () => {
+        this.terminalScreen.classList.toggle('scanlines');
+        this.showToast('Kesan CRT Scanlines diubah');
+      });
+    }
 
-    document.getElementById('btn-clear-term').addEventListener('click', () => {
-      this.terminalLogs.innerHTML = '';
-      this.showToast('Terminal dibersihkan');
-    });
+    const btnClear = document.getElementById('btn-clear-term');
+    if (btnClear) {
+      btnClear.addEventListener('click', () => {
+        if (this.terminalLogs) this.terminalLogs.innerHTML = '';
+        this.showToast('Terminal dibersihkan');
+      });
+    }
 
-    document.getElementById('chk-autoscroll').addEventListener('change', (e) => {
-      this.autoScroll = e.target.checked;
-    });
+    const chkAuto = document.getElementById('chk-autoscroll');
+    if (chkAuto) {
+      chkAuto.addEventListener('change', (e) => {
+        this.autoScroll = e.target.checked;
+      });
+    }
 
     // Clickable Path Pill to change workspace path
     const pillPath = document.getElementById('pill-active-path');
     if (pillPath) {
       pillPath.style.cursor = 'pointer';
       pillPath.addEventListener('click', async () => {
-        const current = this.headerPath.textContent.trim();
+        const current = this.headerPath ? this.headerPath.textContent.trim() : '';
         const newPath = prompt('Tukar Laluan Pengekodan (Workspace Path):', current);
         if (newPath && newPath.trim() && newPath.trim() !== current) {
           try {
@@ -77,7 +90,7 @@ class MiqaApp {
             });
             if (resp.ok) {
               const data = await resp.json();
-              this.headerPath.textContent = data.path;
+              if (this.headerPath) this.headerPath.textContent = data.path;
               this.showToast(`✅ Laluan kod dikemaskini: ${data.path}`);
             } else {
               const errTxt = await resp.text();
@@ -97,50 +110,106 @@ class MiqaApp {
   }
 
   async fetchInitialData() {
+    // 1. Fetch & display logs immediately so terminal is never blank
     try {
-      const [resStatus, resModels, resLogs] = await Promise.all([
-        fetch('/api/status').then(r => r.json()),
-        fetch('/api/models').then(r => r.json()),
-        fetch('/api/logs').then(r => r.json())
-      ]);
-
-      this.activeModel = resStatus.active_model || this.activeModel;
-      this.headerModel.textContent = this.activeModel;
-      if (this.termActiveModel) this.termActiveModel.textContent = this.activeModel;
-      this.headerPath.textContent = resStatus.coding_path || '';
-
-      this.models = resModels || [];
-      if (window.pixelOffice) {
-        window.pixelOffice.updateFromBackend(this.models, this.activeModel, resStatus.is_executing, resStatus.current_task);
-      }
-
-      if (resStatus.is_executing) {
-        this.isExecuting = true;
-        if (this.termStatusText) {
-          this.termStatusText.textContent = `🔴 MELAKSANAKAN ARAHAN: "${resStatus.current_task || ''}"`;
-          this.termStatusText.classList.add('text-working');
+      const resLogs = await fetch('/api/logs').then(r => r.json());
+      if (Array.isArray(resLogs) && resLogs.length > 0) {
+        if (this.terminalLogs) {
+          this.terminalLogs.innerHTML = '';
+          resLogs.forEach(entry => this.appendTerminalLog(entry));
         }
-        if (this.termStatusDot) {
-          this.termStatusDot.className = 'live-status-dot working-dot';
-        }
-        if (this.officeStatusLabel) {
-          this.officeStatusLabel.textContent = `🔴 Ejen Sedang Bekerja (${this.activeModel})`;
-        }
-        if (this.officePulseDot) {
-          this.officePulseDot.className = 'pulse-indicator pulse-red';
-        }
-      }
-
-      if (resStatus.stats) {
-        this.updateSystemMetrics(resStatus.stats);
-      }
-
-      // Populate logs
-      if (Array.isArray(resLogs)) {
-        resLogs.forEach(entry => this.appendTerminalLog(entry));
       }
     } catch (err) {
-      console.warn('Gagal memuatkan data awal:', err);
+      console.warn('Gagal memuatkan log awal:', err);
+    }
+
+    // 2. Fetch system status
+    try {
+      const resStatus = await fetch('/api/status').then(r => r.json());
+      if (resStatus) {
+        this.activeModel = resStatus.active_model || this.activeModel;
+        if (this.headerModel) this.headerModel.textContent = this.activeModel;
+        if (this.termHeaderModel) this.termHeaderModel.textContent = this.activeModel;
+        if (this.headerPath) this.headerPath.textContent = resStatus.coding_path || '';
+
+        if (resStatus.is_executing) {
+          this.setExecutingState(resStatus.current_task || 'Melaksanakan arahan...', 'Telegram');
+        } else {
+          this.setIdleState();
+        }
+
+        if (resStatus.stats) {
+          this.updateSystemMetrics(resStatus.stats);
+        }
+      }
+    } catch (err) {
+      console.warn('Gagal memuatkan status awal:', err);
+    }
+
+    // 3. Fetch model list
+    try {
+      const resModels = await fetch('/api/models').then(r => r.json());
+      if (Array.isArray(resModels)) {
+        this.models = resModels;
+        if (window.pixelOffice) {
+          window.pixelOffice.updateFromBackend(this.models, this.activeModel, this.isExecuting, '');
+        }
+      }
+    } catch (err) {
+      console.warn('Gagal memuatkan senarai model:', err);
+    }
+  }
+
+  setExecutingState(task, source) {
+    this.isExecuting = true;
+    const src = source || 'Telegram';
+    if (this.termStatusText) {
+      this.termStatusText.textContent = `🔴 MELAKSANAKAN ARAHAN (${src}): "${task}"`;
+      this.termStatusText.classList.add('text-working');
+    }
+    if (this.termStatusDot) {
+      this.termStatusDot.className = 'live-status-dot working-dot';
+    }
+    if (this.officeStatusLabel) {
+      this.officeStatusLabel.textContent = `🔴 Ejen Sedang Bekerja (${this.activeModel})`;
+    }
+    if (this.officePulseDot) {
+      this.officePulseDot.className = 'pulse-indicator pulse-red';
+    }
+    if (this.termCursorTag) {
+      this.termCursorTag.textContent = `${this.activeModel}: active`;
+    }
+    if (this.termCursorText) {
+      this.termCursorText.textContent = `Sedang memproses arahan: "${task}"`;
+    }
+    if (window.pixelOffice) {
+      window.pixelOffice.updateFromBackend(this.models, this.activeModel, true, task);
+    }
+  }
+
+  setIdleState() {
+    this.isExecuting = false;
+    if (this.termStatusText) {
+      this.termStatusText.textContent = '🟢 MENUNGGU ARAHAN DARI TELEGRAM (@miqa_agy_bot) ATAU CLI...';
+      this.termStatusText.classList.remove('text-working');
+    }
+    if (this.termStatusDot) {
+      this.termStatusDot.className = 'live-status-dot idle-dot';
+    }
+    if (this.officeStatusLabel) {
+      this.officeStatusLabel.textContent = '🟢 Sedia Menunggu Arahan';
+    }
+    if (this.officePulseDot) {
+      this.officePulseDot.className = 'pulse-indicator';
+    }
+    if (this.termCursorTag) {
+      this.termCursorTag.textContent = `${this.activeModel}: live`;
+    }
+    if (this.termCursorText) {
+      this.termCursorText.textContent = 'Menunggu arahan dari Telegram (@miqa_agy_bot)...';
+    }
+    if (window.pixelOffice) {
+      window.pixelOffice.updateFromBackend(this.models, this.activeModel, false, '');
     }
   }
 
@@ -167,57 +236,15 @@ class MiqaApp {
 
     sse.addEventListener('agent_started', (e) => {
       const data = JSON.parse(e.data);
-      this.isExecuting = true;
       const task = data.task || 'Melaksanakan arahan...';
       const src = data.source || 'Telegram';
-
-      if (this.termStatusText) {
-        this.termStatusText.textContent = `🔴 MELAKSANAKAN ARAHAN (${src}): "${task}"`;
-        this.termStatusText.classList.add('text-working');
-      }
-      if (this.termStatusDot) {
-        this.termStatusDot.className = 'live-status-dot working-dot';
-      }
-      if (this.termBannerStatus) {
-        this.termBannerStatus.textContent = `Sedang melaksanakan arahan dari ${src}...`;
-      }
-      if (this.officeStatusLabel) {
-        this.officeStatusLabel.textContent = `🔴 Ejen Sedang Bekerja (${data.model || this.activeModel})`;
-      }
-      if (this.officePulseDot) {
-        this.officePulseDot.className = 'pulse-indicator pulse-red';
-      }
-
-      if (window.pixelOffice) {
-        window.pixelOffice.updateFromBackend(this.models, data.model, true, task);
-      }
+      this.setExecutingState(task, src);
       this.showToast(`⚡ Arahan diterima dari ${src} untuk model ${data.model || this.activeModel}`);
     });
 
     sse.addEventListener('agent_finished', (e) => {
       const data = JSON.parse(e.data);
-      this.isExecuting = false;
-
-      if (this.termStatusText) {
-        this.termStatusText.textContent = '🟢 MENUNGGU ARAHAN DARI TELEGRAM (@miqa_agy_bot) ATAU CLI...';
-        this.termStatusText.classList.remove('text-working');
-      }
-      if (this.termStatusDot) {
-        this.termStatusDot.className = 'live-status-dot idle-dot';
-      }
-      if (this.termBannerStatus) {
-        this.termBannerStatus.textContent = 'Menunggu arahan pengekodan dari Telegram (@miqa_agy_bot) atau CLI...';
-      }
-      if (this.officeStatusLabel) {
-        this.officeStatusLabel.textContent = '🟢 Sedia Menunggu Arahan';
-      }
-      if (this.officePulseDot) {
-        this.officePulseDot.className = 'pulse-indicator';
-      }
-
-      if (window.pixelOffice) {
-        window.pixelOffice.updateFromBackend(this.models, data.model, false, '');
-      }
+      this.setIdleState();
       this.showToast(`✅ Tugasan selesai (${data.duration || ''})`);
     });
 
@@ -234,8 +261,8 @@ class MiqaApp {
     sse.addEventListener('model_changed', (e) => {
       const data = JSON.parse(e.data);
       this.activeModel = data.model;
-      this.headerModel.textContent = data.model;
-      this.termActiveModel.textContent = data.model;
+      if (this.headerModel) this.headerModel.textContent = data.model;
+      if (this.termHeaderModel) this.termHeaderModel.textContent = data.model;
       if (window.pixelOffice) {
         window.pixelOffice.updateFromBackend(this.models, data.model, this.isExecuting, '');
       }
@@ -243,7 +270,7 @@ class MiqaApp {
 
     sse.addEventListener('path_changed', (e) => {
       const data = JSON.parse(e.data);
-      if (data.path) {
+      if (data.path && this.headerPath) {
         this.headerPath.textContent = data.path;
       }
     });
@@ -271,7 +298,8 @@ class MiqaApp {
   }
 
   appendTerminalLog(entry) {
-    const rawText = entry.Text !== undefined ? String(entry.Text) : '';
+    if (!entry) return;
+    const rawText = entry.text !== undefined ? String(entry.text) : (entry.Text !== undefined ? String(entry.Text) : '');
     const cleanText = rawText.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
 
     // Skip entirely empty log lines — never show bare timestamps
@@ -280,9 +308,13 @@ class MiqaApp {
     const row = document.createElement('div');
     row.className = 'log-entry';
 
+    const entryType = entry.type || entry.Type || 'stdout';
+    const rawTime = entry.timestamp || entry.Timestamp || new Date().toTimeString().split(' ')[0];
+    const entryTime = rawTime.startsWith('[') ? rawTime : `[${rawTime}]`;
+
     const timeSpan = document.createElement('span');
     timeSpan.className = 'log-time';
-    timeSpan.textContent = entry.Timestamp || new Date().toTimeString().split(' ')[0];
+    timeSpan.textContent = entryTime;
 
     const pipeIdx = cleanText.indexOf(' | ');
     if (pipeIdx !== -1) {
@@ -292,11 +324,11 @@ class MiqaApp {
       const tagSpan = document.createElement('span');
       let tagClass = 'tag-default';
       const lowerTag = tagPart.toLowerCase();
-      if (lowerTag.includes('thinking') || entry.Type === 'thinking') tagClass = 'tag-thinking';
-      else if (lowerTag.includes('develop') || entry.Type === 'develop') tagClass = 'tag-develop';
-      else if (lowerTag.includes('result') || entry.Type === 'result') tagClass = 'tag-result';
-      else if (lowerTag.includes('prompt') || lowerTag.includes('user:') || entry.Type === 'prompt') tagClass = 'tag-prompt';
-      else if (lowerTag.includes('system') || entry.Type === 'system') tagClass = 'tag-system';
+      if (lowerTag.includes('thinking') || entryType === 'thinking') tagClass = 'tag-thinking';
+      else if (lowerTag.includes('develop') || entryType === 'develop') tagClass = 'tag-develop';
+      else if (lowerTag.includes('result') || entryType === 'result') tagClass = 'tag-result';
+      else if (lowerTag.includes('prompt') || lowerTag.includes('user:') || entryType === 'prompt') tagClass = 'tag-prompt';
+      else if (lowerTag.includes('system') || entryType === 'system') tagClass = 'tag-system';
 
       tagSpan.className = `log-tag ${tagClass}`;
       tagSpan.textContent = tagPart;
@@ -313,23 +345,46 @@ class MiqaApp {
       row.appendChild(tagSpan);
       row.appendChild(sepSpan);
       row.appendChild(msgSpan);
+
+      // Update Cursor Line at bottom of terminal
+      if (this.termCursorText) {
+        this.termCursorText.textContent = msgPart;
+      }
+      if (this.termCursorTag) {
+        this.termCursorTag.textContent = tagPart;
+      }
+
+      // Update Pixel Office bubble dynamically
+      if (window.pixelOffice && (tagClass === 'tag-thinking' || tagClass === 'tag-develop' || tagClass === 'tag-result')) {
+        let actionDesc = msgPart;
+        if (tagClass === 'tag-thinking') actionDesc = 'Berfikir: ' + msgPart;
+        else if (tagClass === 'tag-develop') actionDesc = 'Menulis: ' + msgPart;
+        else if (tagClass === 'tag-result') actionDesc = 'Hasil: ' + msgPart;
+        window.pixelOffice.updateAgentAction(this.activeModel, tagClass, actionDesc);
+      }
     } else {
       const textSpan = document.createElement('span');
-      textSpan.className = `log-${entry.Type || 'stdout'}`;
+      textSpan.className = `log-${entryType}`;
       textSpan.textContent = cleanText;
       row.appendChild(timeSpan);
       row.appendChild(textSpan);
+
+      if (this.termCursorText) {
+        this.termCursorText.textContent = cleanText;
+      }
     }
 
-    this.terminalLogs.appendChild(row);
+    if (this.terminalLogs) {
+      this.terminalLogs.appendChild(row);
 
-    // Cap at 300 visible rows
-    while (this.terminalLogs.children.length > 300) {
-      this.terminalLogs.removeChild(this.terminalLogs.firstChild);
-    }
+      // Cap at 300 visible rows
+      while (this.terminalLogs.children.length > 300) {
+        this.terminalLogs.removeChild(this.terminalLogs.firstChild);
+      }
 
-    if (this.autoScroll) {
-      this.terminalScreen.scrollTop = this.terminalScreen.scrollHeight;
+      if (this.autoScroll) {
+        this.terminalLogs.scrollTop = this.terminalLogs.scrollHeight;
+      }
     }
   }
 

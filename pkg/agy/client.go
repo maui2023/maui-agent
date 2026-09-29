@@ -249,7 +249,7 @@ func (c *Client) RunPromptStreaming(ctx context.Context, prompt string, model st
 
 	if waitErr != nil {
 		if ctx.Err() != nil {
-			return "", ctx.Err()
+			return stdoutStr, ctx.Err()
 		}
 		if stdoutStr != "" {
 			return stdoutStr, fmt.Errorf("ralat pelaksanaan: %w (stderr: %s)", waitErr, stderrStr)
